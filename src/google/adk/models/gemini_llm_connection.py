@@ -26,7 +26,7 @@ from ..utils.variant_utils import GoogleLLMVariant
 from .base_llm_connection import BaseLlmConnection
 from .llm_response import LlmResponse
 
-logger = logging.getLogger('google_adk.' + __name__)
+logger = logging.getLogger("google_adk." + __name__)
 
 RealtimeInput = Union[types.Blob, types.ActivityStart, types.ActivityEnd]
 from typing import TYPE_CHECKING
@@ -45,8 +45,8 @@ class GeminiLlmConnection(BaseLlmConnection):
       model_version: str | None = None,
   ):
     self._gemini_session = gemini_session
-    self._input_transcription_text: str = ''
-    self._output_transcription_text: str = ''
+    self._input_transcription_text: str = ""
+    self._output_transcription_text: str = ""
     self._api_backend = api_backend
     self._model_version = model_version
 
@@ -79,15 +79,15 @@ class GeminiLlmConnection(BaseLlmConnection):
     ]
 
     if contents:
-      logger.debug('Sending history to live connection: %s', contents)
+      logger.debug("Sending history to live connection: %s", contents)
       await self._gemini_session.send(
           input=types.LiveClientContent(
               turns=contents,
-              turn_complete=contents[-1].role == 'user',
+              turn_complete=contents[-1].role == "user",
           ),
       )
     else:
-      logger.info('no content is sent')
+      logger.info("no content is sent")
 
   async def send_content(self, content: types.Content):
     """Sends a user content to the gemini model.
@@ -104,14 +104,14 @@ class GeminiLlmConnection(BaseLlmConnection):
     if content.parts[0].function_response:
       # All parts have to be function responses.
       function_responses = [part.function_response for part in content.parts]
-      logger.debug('Sending LLM function response: %s', function_responses)
+      logger.debug("Sending LLM function response: %s", function_responses)
       await self._gemini_session.send(
           input=types.LiveClientToolResponse(
               function_responses=function_responses
           ),
       )
     else:
-      logger.debug('Sending LLM new content %s', content)
+      logger.debug("Sending LLM new content %s", content)
       await self._gemini_session.send(
           input=types.LiveClientContent(
               turns=[content],
@@ -127,17 +127,17 @@ class GeminiLlmConnection(BaseLlmConnection):
     """
     if isinstance(input, types.Blob):
       # The blob is binary and is very large. So let's not log it.
-      logger.debug('Sending LLM Blob.')
+      logger.debug("Sending LLM Blob.")
       await self._gemini_session.send_realtime_input(media=input)
 
     elif isinstance(input, types.ActivityStart):
-      logger.debug('Sending LLM activity start signal.')
+      logger.debug("Sending LLM activity start signal.")
       await self._gemini_session.send_realtime_input(activity_start=input)
     elif isinstance(input, types.ActivityEnd):
-      logger.debug('Sending LLM activity end signal.')
+      logger.debug("Sending LLM activity end signal.")
       await self._gemini_session.send_realtime_input(activity_end=input)
     else:
-      raise ValueError('Unsupported input type: %s' % type(input))
+      raise ValueError("Unsupported input type: %s" % type(input))
 
   def __build_full_text_response(self, text: str):
     """Builds a full text response.
@@ -153,7 +153,7 @@ class GeminiLlmConnection(BaseLlmConnection):
     """
     return LlmResponse(
         content=types.Content(
-            role='model',
+            role="model",
             parts=[types.Part.from_text(text=text)],
         ),
     )
@@ -165,12 +165,12 @@ class GeminiLlmConnection(BaseLlmConnection):
       LlmResponse: The model response.
     """
 
-    text = ''
+    text = ""
     async with Aclosing(self._gemini_session.receive()) as agen:
       # TODO(b/440101573): Reuse StreamingResponseAggregator to accumulate
       # partial content and emit responses as needed.
       async for message in agen:
-        logger.debug('Got LLM Live message: %s', message)
+        logger.debug("Got LLM Live message: %s", message)
         if message.usage_metadata:
           # Tracks token usage data per model.
           yield LlmResponse(
@@ -179,9 +179,23 @@ class GeminiLlmConnection(BaseLlmConnection):
           )
         if message.server_content:
           content = message.server_content.model_turn
+
+          # Standalone grounding_metadata event (when content is empty)
+          if (
+              not content
+              and message.server_content.grounding_metadata
+              and not message.server_content.turn_complete
+          ):
+            yield LlmResponse(
+                grounding_metadata=message.server_content.grounding_metadata,
+                interrupted=message.server_content.interrupted,
+            )
+
           if content and content.parts:
             llm_response = LlmResponse(
-                content=content, interrupted=message.server_content.interrupted
+                content=content,
+                interrupted=message.server_content.interrupted,
+                grounding_metadata=message.server_content.grounding_metadata,
             )
             if content.parts[0].text:
               text += content.parts[0].text
@@ -189,7 +203,7 @@ class GeminiLlmConnection(BaseLlmConnection):
             # don't yield the merged text event when receiving audio data
             elif text and not content.parts[0].inline_data:
               yield self.__build_full_text_response(text)
-              text = ''
+              text = ""
             yield llm_response
           # Note: in some cases, tool_call may arrive before
           # generation_complete, causing transcription to appear after
@@ -216,7 +230,7 @@ class GeminiLlmConnection(BaseLlmConnection):
                   ),
                   partial=False,
               )
-              self._input_transcription_text = ''
+              self._input_transcription_text = ""
           if message.server_content.output_transcription:
             if message.server_content.output_transcription.text:
               self._output_transcription_text += (
@@ -237,7 +251,7 @@ class GeminiLlmConnection(BaseLlmConnection):
                   ),
                   partial=False,
               )
-              self._output_transcription_text = ''
+              self._output_transcription_text = ""
           # The Gemini API might not send a transcription finished signal.
           # Instead, we rely on generation_complete, turn_complete or
           # interrupted signals to flush any pending transcriptions.
@@ -254,7 +268,7 @@ class GeminiLlmConnection(BaseLlmConnection):
                   ),
                   partial=False,
               )
-              self._input_transcription_text = ''
+              self._input_transcription_text = ""
             if self._output_transcription_text:
               yield LlmResponse(
                   output_transcription=types.Transcription(
@@ -263,14 +277,15 @@ class GeminiLlmConnection(BaseLlmConnection):
                   ),
                   partial=False,
               )
-              self._output_transcription_text = ''
+              self._output_transcription_text = ""
           if message.server_content.turn_complete:
             if text:
               yield self.__build_full_text_response(text)
-              text = ''
+              text = ""
             yield LlmResponse(
                 turn_complete=True,
                 interrupted=message.server_content.interrupted,
+                grounding_metadata=message.server_content.grounding_metadata,
             )
             break
           # in case of empty content or parts, we sill surface it
@@ -280,20 +295,20 @@ class GeminiLlmConnection(BaseLlmConnection):
           if message.server_content.interrupted:
             if text:
               yield self.__build_full_text_response(text)
-              text = ''
+              text = ""
             else:
               yield LlmResponse(interrupted=message.server_content.interrupted)
         if message.tool_call:
           if text:
             yield self.__build_full_text_response(text)
-            text = ''
+            text = ""
           parts = [
               types.Part(function_call=function_call)
               for function_call in message.tool_call.function_calls
           ]
-          yield LlmResponse(content=types.Content(role='model', parts=parts))
+          yield LlmResponse(content=types.Content(role="model", parts=parts))
         if message.session_resumption_update:
-          logger.debug('Received session resumption message: %s', message)
+          logger.debug("Received session resumption message: %s", message)
           yield (
               LlmResponse(
                   live_session_resumption_update=message.session_resumption_update
