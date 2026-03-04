@@ -174,7 +174,6 @@ async def test_receive_transcript_finished(
   assert not transcription.text
 
 
-@pytest.mark.asyncio
 async def test_receive_usage_metadata_and_server_content(
     gemini_connection, mock_gemini_session
 ):
